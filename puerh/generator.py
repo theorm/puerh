@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 import random
 from bson import ObjectId
-from datetime import datetime, timedelta
-
-
-DEFAULT_PREFIXES = ('FB', 'IG', '4S')
-
+from datetime import timedelta
+from .source import PREFIXES
 
 def random_ids(n, prefixes=[]):
     '''Generate `n` random IDs
@@ -14,7 +11,7 @@ def random_ids(n, prefixes=[]):
         yield ObjectId()
 
 
-def generate_post_events(start, end, max_step, num_venues, num_posters, prefixes=DEFAULT_PREFIXES):
+def generate_post_events(start, end, max_step, num_venues, num_posters, prefixes=PREFIXES):
     '''Generate a number of random post events.
     Parameters:
         `start` - minimum start datetime of the earliest event
@@ -29,8 +26,8 @@ def generate_post_events(start, end, max_step, num_venues, num_posters, prefixes
     assert end > start
     assert max_step.total_seconds() > 0
 
-    venues = {prefix:map(lambda id: '{}-{}'.format(prefix, id), random_ids(num_venues)) for prefix in prefixes}
-    posters = {prefix:map(lambda id: '{}-{}'.format(prefix, id), random_ids(num_posters)) for prefix in prefixes}
+    venues = list(random_ids(num_venues))
+    posters = list(random_ids(num_posters))
 
     timestamp = start
 
@@ -38,11 +35,14 @@ def generate_post_events(start, end, max_step, num_venues, num_posters, prefixes
         prefix = random.choice(prefixes)
 
         event = {
-            '_id': '{}-{}'.format(prefix, ObjectId()),
+            '_id': {
+                'source': prefix,
+                'id': ObjectId(),
+            },
             'type': 'POST',
             'timestamp': timestamp,
-            'venue': random.choice(venues[prefix]),
-            'poster': random.choice(posters[prefix]),
+            'venue': random.choice(venues),
+            'poster': random.choice(posters),
             'delta': 1
         }
 
