@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 from pyelasticsearch.client import ElasticSearch, JsonEncoder
 from pyelasticsearch.exceptions import ElasticHttpNotFoundError
+from .source import PREFIXES
 from bson import ObjectId
-import random
+import copy
+from datetime import datetime
+
 
 class ESJSONEncoder(JsonEncoder):
 
@@ -49,7 +52,7 @@ class Indexer(object):
             'source': event['_id']['source'],
             'venue': '{}-{}'.format(event['_id']['source'], event['venue']),
             'poster': '{}-{}'.format(event['_id']['source'], event['poster']),
-            'delta': random.choice((1,2,3)) #event.get('delta', 1)
+            'delta': event.get('delta', 1)
         }
 
         self._es.index(
@@ -109,8 +112,8 @@ class Query(object):
     def total(self, event_type, start=None, end=None, venues=[], posters=[]):
         '''Returns event's sum of deltas broken down per source:
             {
-                'IG': 25,
-                'FB': 3,
+                'IG': 25.0,
+                'FB': 3.0,
                 ...
             }
 
@@ -121,9 +124,6 @@ class Query(object):
             venues=venues, posters=posters)
 
         query = {
-            'query': {'match_all': {}},
-            'filter': {
-            },
             'facets': {
                 'events_deltas_totals': {
                     'terms_stats': {
@@ -146,4 +146,76 @@ class Query(object):
         return {
             f['term']: f['total']
             for f in facets
+        }
+
+    def _format_histogram_facet_values(self, values):
+        return [
+            {'time': datetime.utcfromtimestamp(v['time']/1000), 'total': v['total']}
+            for v in values['entries']
+        ]
+
+    def histogram(self, event_type, interval, start=None, end=None, 
+            venues=[], posters=[], sources_facets=PREFIXES, include_total=True):
+        '''Returns histogram of events deltas totals in buckets by `interval` apart.
+
+        {
+            'total': [
+                {'time': <datetime-1>, 'total': 3.0},
+                {'time': <datetime-2>, 'total': 1.0},
+            ],
+            'FB': [
+                ...
+            ]
+        }
+
+        Filter parameters are the same as in `total` method.
+
+        Source facets are taken from `sources_facets` param. If you don't want them,
+        just pass an empty list.
+
+        Total facet is included by default. If you don't need it, set 
+        `include_total` to `False`.
+        '''
+        
+        filters = self._build_filter(event_type, start=start, end=end, 
+            venues=venues, posters=posters)
+
+        date_histogram_value = {
+            'key_field': 'timestamp',
+            'value_field': 'delta',
+            'interval': interval,
+        }
+
+        facets = {}
+
+        if include_total:
+            facets['total'] = {
+                'date_histogram': date_histogram_value,
+                'facet_filter': filters
+            }
+
+
+        for source in sources_facets:
+
+            f = copy.deepcopy(filters)
+            f['and'].append({
+                'term': {'source': source}
+            })
+
+            payload = {
+                'date_histogram': date_histogram_value,
+                'facet_filter': filters
+            }
+            facets[source] = payload
+
+        result = self._es._search_or_count(
+            '_search',
+            query={'facets': facets}, 
+            index=self._index, 
+            query_params={'search_type': 'count'}
+        )
+        
+        return {
+            facet: self._format_histogram_facet_values(values) 
+            for facet, values in result['facets'].iteritems()
         }

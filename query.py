@@ -16,4 +16,6 @@ if __name__ == '__main__':
     posters = [
     ]
 
-    print query.total('post', end=end, venues=venues, posters=posters)
+    print query.total('post', start=start, end=end, venues=venues, posters=posters)
+
+    print query.histogram('post', '1d', start=start, end=end, venues=venues, posters=posters, sources_facets=[])
