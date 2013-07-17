@@ -148,6 +148,42 @@ class Query(object):
             for f in facets
         }
 
+    def top_terms(self, event_type, term, limit=10, start=None, end=None, venues=[], posters=[]):
+        '''Returns `limit` top terms with their count.
+        `term` can be one of: `poster`, `venue`, `source`.
+
+        This is a more flexible version of top posters.
+
+        The rest of arguments do the same as in `total` function.
+        '''
+
+        assert term in ('poster', 'venue', 'source')
+
+        filters = self._build_filter(event_type, start=start, end=end, 
+            venues=venues, posters=posters)
+
+        query = {
+            'facets': {
+                'top': {
+                    'terms': {
+                        'field': term,
+                        'size': limit
+                    },
+                    'facet_filter': filters
+                }
+            }
+        }
+
+        result = self._es._search_or_count(
+            '_search',
+            query, 
+            index=self._index, 
+            query_params={'search_type': 'count'}
+        )
+        facets = result['facets']['top']['terms']
+        return facets
+
+
     def _format_histogram_facet_values(self, values):
         return [
             {'time': datetime.utcfromtimestamp(v['time']/1000), 'total': v['total']}
