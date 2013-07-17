@@ -65,18 +65,21 @@ class Query(object):
         self._es = ElasticSearch(url)
         self._index = index
 
-    def total(self, event_type, start=None, end=None, venues=[], posters=[]):
-        '''Returns event's sum of deltas broken down per source:
-            {
-                'IG': 25,
-                'FB': 3,
-                ...
-            }
-
-            Can be filtered by start and end dates, venues or posters.
+    def _build_filter(self, event_type, start=None, end=None, **kwargs):
+        '''Build an 'AND' filter that combines filters:
+            1. correct `event_type`
+            2. more or equal than start time (if provided)
+            3. less or equal than end time (if provided)
+            4. filter by values of terms in kwargs
         '''
 
+
         filters = []
+
+        # 0. event type
+        filters.append({
+            'term': {'_type': event_type}
+        })
 
         timestamp_range = {}
         if start:
@@ -90,24 +93,32 @@ class Query(object):
                 'range': {'timestamp': timestamp_range}
             })
 
-        if venues:
-            terms = {
-                'venue': venues,
-                'execution': 'or'
-            }
-            filters.append({
-                'terms': terms,
-            })
+        for term_name, term_values in kwargs.iteritems():
+            if term_values:
+                terms = {
+                    'venue': term_values,
+                    'execution': 'or'
+                }
+                filters.append({
+                    'terms': terms,
+                })
 
-        if posters:
-            terms = {
-                'poster': posters,
-                'execution': 'or'
-            }
-            filters.append({
-                'terms': terms,
-            })
+        return {'and': filters}
 
+
+    def total(self, event_type, start=None, end=None, venues=[], posters=[]):
+        '''Returns event's sum of deltas broken down per source:
+            {
+                'IG': 25,
+                'FB': 3,
+                ...
+            }
+
+            Can be filtered by start and end dates, venues or posters.
+        '''
+
+        filters = self._build_filter(event_type, start=start, end=end, 
+            venues=venues, posters=posters)
 
         query = {
             'query': {'match_all': {}},
@@ -119,9 +130,7 @@ class Query(object):
                         'key_field': 'source',
                         'value_field': 'delta'
                     },
-                    'facet_filter': {
-                        'and': filters
-                    }
+                    'facet_filter': filters
                 }
             }
         }
