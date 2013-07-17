@@ -11,7 +11,9 @@ if __name__ == '__main__':
     query = Query()
 
     venues = [
-        '4S-51e601e51b14527bb6b35530'
     ]
 
-    print query.total('post', end=end, venues=venues)
+    posters = [
+    ]
+
+    print query.total('post', end=end, venues=venues, posters=posters)

@@ -2,7 +2,7 @@
 from pyelasticsearch.client import ElasticSearch, JsonEncoder
 from pyelasticsearch.exceptions import ElasticHttpNotFoundError
 from bson import ObjectId
-
+import random
 
 class ESJSONEncoder(JsonEncoder):
 
@@ -33,9 +33,10 @@ class Indexer(object):
         mapping = {
             'properties': {
                 'timestamp': {'type': 'date', 'format': 'dateOptionalTime'},
+                'source': {'type': 'string', 'index': 'not_analyzed'},
                 'venue': {'type': 'string', 'index': 'not_analyzed'},
                 'poster': {'type': 'string', 'index': 'not_analyzed'},
-                'delta': {'type': 'long'}
+                'delta': {'type': 'integer'}
             }
         }
 
@@ -45,9 +46,10 @@ class Indexer(object):
 
         data = {
             'timestamp': event['timestamp'],
+            'source': event['_id']['source'],
             'venue': '{}-{}'.format(event['_id']['source'], event['venue']),
             'poster': '{}-{}'.format(event['_id']['source'], event['poster']),
-            'delta': event.get('delta', 1)
+            'delta': random.choice((1,2,3)) #event.get('delta', 1)
         }
 
         self._es.index(
@@ -63,7 +65,16 @@ class Query(object):
         self._es = ElasticSearch(url)
         self._index = index
 
-    def total(self, event_type, start=None, end=None, venues=[]):
+    def total(self, event_type, start=None, end=None, venues=[], posters=[]):
+        '''Returns event's sum of deltas broken down per source:
+            {
+                'IG': 25,
+                'FB': 3,
+                ...
+            }
+
+            Can be filtered by start and end dates, venues or posters.
+        '''
 
         filters = []
 
@@ -79,28 +90,51 @@ class Query(object):
                 'range': {'timestamp': timestamp_range}
             })
 
-        terms = {}
         if venues:
-            terms['venue'] = venues
-
-        # 2. any venue/poster constraints?
-        if terms:
-            terms['execution'] = 'or'
-
+            terms = {
+                'venue': venues,
+                'execution': 'or'
+            }
             filters.append({
                 'terms': terms,
             })
 
+        if posters:
+            terms = {
+                'poster': posters,
+                'execution': 'or'
+            }
+            filters.append({
+                'terms': terms,
+            })
+
+
         query = {
-            'filtered': {
-                'query': {'match_all': {}},
-                'filter': {
-                    'and': filters
+            'query': {'match_all': {}},
+            'filter': {
+            },
+            'facets': {
+                'events_deltas_totals': {
+                    'terms_stats': {
+                        'key_field': 'source',
+                        'value_field': 'delta'
+                    },
+                    'facet_filter': {
+                        'and': filters
+                    }
                 }
             }
         }
 
 
-        result = self._es.count(query, index=self._index)
-        return result['count']
-
+        result = self._es._search_or_count(
+            '_search',
+            query, 
+            index=self._index, 
+            query_params={'search_type': 'count'}
+        )
+        facets = result['facets']['events_deltas_totals']['terms']
+        return {
+            f['term']: f['total']
+            for f in facets
+        }
