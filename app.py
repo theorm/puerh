@@ -8,7 +8,7 @@ if __name__ == '__main__':
     from datetime import datetime, timedelta
 
 
-    start = datetime.now() - timedelta(days=30)
+    start = datetime.now() - timedelta(days=365*2)
     end = datetime.now()
     step = timedelta(hours=1)
     num_venues = num_posters = 5
