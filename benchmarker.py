@@ -95,12 +95,71 @@ class Benchmarker(object):
 
             days += 1
 
+    def benchmark_histogram(self, start_window_days, end_window_days, 
+        step_days, max_venues_filter):
+
+        assert start_window_days < end_window_days
+
+        random_venues = self.get_random_venues(max_venues_filter)
+
+        end_time = datetime.now()
+
+
+        days = start_window_days
+        while days <= end_window_days:
+
+            start_time = end_time - timedelta(days=days)
+
+            for venues_count in xrange(0, max_venues_filter):
+                venues = random_venues[0:venues_count]
+
+                with timer:
+                    result = self.elasticsearch_query.histogram('post', 'month', start=start_time,
+                        end=end_time, venues=venues)
+
+                print('{} days window with {} venues took elasticsearch {}ms: {}'.format(
+                    days, venues_count, timer.duration_in_seconds()*1000, len(result)))
+
+            days += 1
+
+    def benchmark_top_posters(self, start_window_days, end_window_days, 
+        step_days, max_venues_filter):
+
+        assert start_window_days < end_window_days
+
+        random_venues = self.get_random_venues(max_venues_filter)
+
+        end_time = datetime.now()
+
+
+        days = start_window_days
+        while days <= end_window_days:
+
+            start_time = end_time - timedelta(days=days)
+
+            for venues_count in xrange(0, max_venues_filter):
+                venues = random_venues[0:venues_count]
+
+                with timer:
+                    result = self.elasticsearch_query.top_terms('post', 'poster', start=start_time,
+                        end=end_time, venues=venues)
+
+                print('{} days window with {} venues took elasticsearch {}ms: {}'.format(
+                    days, venues_count, timer.duration_in_seconds()*1000, len(result)))
+
+            days += 1
 
 if __name__ == '__main__':
     benchmarker = Benchmarker()
 
-    # generate_results = benchmarker.generate_events(365, timedelta(hours=1), 10, 10)
-    # print('Generated events: {}'.format(generate_results))
+    generate_results = benchmarker.generate_events(365 * 4, timedelta(minutes=2), 15, 15)
+    print('Generated events: {}'.format(generate_results))
 
-    print('Benchmarking total posts...')
-    benchmarker.benchmark_total_posts(1, 100, 1, 5)
+    # print('Benchmarking total posts...')
+    # benchmarker.benchmark_total_posts(1, 500, 1, 5)
+
+    # print('Benchmarking histogram...')
+    # benchmarker.benchmark_histogram(1, 500, 1, 5)
+
+    # print('Benchmarking top posters...')
+    # benchmarker.benchmark_top_posters(1, 500, 1, 5)

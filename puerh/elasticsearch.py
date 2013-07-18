@@ -33,7 +33,7 @@ class Indexer(object):
             }
         })
 
-        mapping = {
+        not_analyzed_mapping = {
             'properties': {
                 'timestamp': {'type': 'date', 'format': 'dateOptionalTime'},
                 'source': {'type': 'string', 'index': 'not_analyzed'},
@@ -42,6 +42,18 @@ class Indexer(object):
                 'delta': {'type': 'integer'}
             }
         }
+
+        analyzed_mapping = {
+            'properties': {
+                'timestamp': {'type': 'date', 'format': 'dateOptionalTime'},
+                'source': {'type': 'string', 'analyzer': 'keyword'},
+                'venue': {'type': 'string', 'analyzer': 'keyword'},
+                'poster': {'type': 'string', 'analyzer': 'keyword'},
+                'delta': {'type': 'integer'}
+            }
+        }
+
+        mapping = analyzed_mapping
 
         self._es.put_mapping(self._index, 'post', {'post': mapping})
 
