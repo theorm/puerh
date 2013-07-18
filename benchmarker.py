@@ -121,10 +121,10 @@ class Benchmarker(object):
                     'median': numpy.median(s[0])
                 },
                 'with_overhead': {
-                    'total': t[1]/1000,
-                    'min': numpy.min(s[1]),
-                    'max': numpy.max(s[1]),
-                    'median': numpy.median(s[1])
+                    'total': int(round(t[1]/1000)),
+                    'min': int(round(numpy.min(s[1]))),
+                    'max': int(round(numpy.max(s[1]))),
+                    'median': int(round(numpy.median(s[1])))
                 }
             }
             for t, s in zip(totals, times)
@@ -184,4 +184,4 @@ if __name__ == '__main__':
     for filter_venues, results in enumerate(result):
         print('{} with {} venues:'.format(benchmark_name, filter_venues))
         for result_type, data in results.iteritems():
-            print('{}: {}'.format(result_type, data))
+            print('{}: {min}\t{max}\t{median}\t{total}'.format(result_type, **data))
