@@ -3,6 +3,7 @@ import pymongo
 from puerh.elasticsearch import Indexer, Query
 from puerh.generator import generate_post_events
 from datetime import datetime, timedelta
+import numpy
 
 import random
 import time
@@ -68,98 +69,119 @@ class Benchmarker(object):
             for i in self.mongo_events_collection.distinct('venue')
         ]
 
-
-    def benchmark_total_posts(self, start_window_days, end_window_days, 
+    def benchmark(self, name, start_window_days, end_window_days, 
         step_days, max_venues_filter):
+
+        method = getattr(self, '_benchmark_{}'.format(name))
+        
         assert start_window_days < end_window_days
 
         random_venues = self.get_random_venues(max_venues_filter)
 
         end_time = datetime.now()
 
+        # an array to record time taken (without and with overhead)
+        # per number of venues in the filter
+        times = [([], []) for i in xrange(0, max_venues_filter)]
+        # same with totals
+        totals = [[0, 0] for i in xrange(0, max_venues_filter)]
 
-        days = start_window_days
-        while days <= end_window_days:
+        # increase number of venues in the filter by one for every iteration
+        for venues_count in xrange(0, max_venues_filter):
+            venues = random_venues[0:venues_count]
 
-            start_time = end_time - timedelta(days=days)
+            # start with minimum days window
+            days = start_window_days
+            while days <= end_window_days:
 
-            for venues_count in xrange(0, max_venues_filter):
-                venues = random_venues[0:venues_count]
-
-                with timer:
-                    result = self.elasticsearch_query.total('post', start=start_time,
-                        end=end_time, venues=venues)
-
-                print('{} days window with {} venues took elasticsearch {}ms: {}'.format(
-                    days, venues_count, timer.duration_in_seconds()*1000, result))
-
-            days += 1
-
-    def benchmark_histogram(self, start_window_days, end_window_days, 
-        step_days, max_venues_filter):
-
-        assert start_window_days < end_window_days
-
-        random_venues = self.get_random_venues(max_venues_filter)
-
-        end_time = datetime.now()
-
-
-        days = start_window_days
-        while days <= end_window_days:
-
-            start_time = end_time - timedelta(days=days)
-
-            for venues_count in xrange(0, max_venues_filter):
-                venues = random_venues[0:venues_count]
+                start_time = end_time - timedelta(days=days)
 
                 with timer:
-                    result = self.elasticsearch_query.histogram('post', 'month', start=start_time,
-                        end=end_time, venues=venues)
+                    method(start_time, end_time, venues)
 
-                print('{} days window with {} venues took elasticsearch {}ms: {}'.format(
-                    days, venues_count, timer.duration_in_seconds()*1000, len(result)))
+                took_without_overhead = self.elasticsearch_query.last_request_took()
+                took_with_overhead = timer.duration_in_seconds()*1000
 
-            days += 1
+                totals[venues_count][0] += took_without_overhead
+                totals[venues_count][1] += took_with_overhead
+                times[venues_count][0].append(took_without_overhead)
+                times[venues_count][1].append(took_with_overhead)
 
-    def benchmark_top_posters(self, start_window_days, end_window_days, 
-        step_days, max_venues_filter):
+                print('{} days window with {} venues took elasticsearch {} ms ({} ms.)'.format(
+                    days, venues_count, took_without_overhead, took_with_overhead))
 
-        assert start_window_days < end_window_days
+                days += 1
 
-        random_venues = self.get_random_venues(max_venues_filter)
+        return [
+            {
+                'without_overhead': {
+                    'total': t[0]/1000,
+                    'min': numpy.min(s[0]),
+                    'max': numpy.max(s[0]),
+                    'median': numpy.median(s[0])
+                },
+                'with_overhead': {
+                    'total': t[1]/1000,
+                    'min': numpy.min(s[1]),
+                    'max': numpy.max(s[1]),
+                    'median': numpy.median(s[1])
+                }
+            }
+            for t, s in zip(totals, times)
+        ]
 
-        end_time = datetime.now()
+    def _benchmark_total_posts(self, start_time, end_time, venues):
+        return self.elasticsearch_query.total('post', start=start_time, 
+            end=end_time, venues=venues)
 
+    def _benchmark_histogram_day(self, start_time, end_time, venues):
+        return self.elasticsearch_query.histogram('post', 'day', start=start_time,
+            end=end_time, venues=venues)
 
-        days = start_window_days
-        while days <= end_window_days:
+    def _benchmark_histogram_week(self, start_time, end_time, venues):
+        return self.elasticsearch_query.histogram('post', 'week', start=start_time,
+            end=end_time, venues=venues)
 
-            start_time = end_time - timedelta(days=days)
+    def _benchmark_histogram_month(self, start_time, end_time, venues):
+        return self.elasticsearch_query.histogram('post', 'month', start=start_time,
+            end=end_time, venues=venues)
 
-            for venues_count in xrange(0, max_venues_filter):
-                venues = random_venues[0:venues_count]
+    def _benchmark_top_posters(self, start_time, end_time, venues):
+        return self.elasticsearch_query.top_terms('post', 'poster', start=start_time,
+            end=end_time, venues=venues)
 
-                with timer:
-                    result = self.elasticsearch_query.top_terms('post', 'poster', start=start_time,
-                        end=end_time, venues=venues)
-
-                print('{} days window with {} venues took elasticsearch {}ms: {}'.format(
-                    days, venues_count, timer.duration_in_seconds()*1000, len(result)))
-
-            days += 1
 
 if __name__ == '__main__':
+    import sys
     benchmarker = Benchmarker()
 
-    generate_results = benchmarker.generate_events(365 * 4, timedelta(minutes=2), 15, 15)
-    print('Generated events: {}'.format(generate_results))
+    if 'generate' in sys.argv:
+        days = 365 * 2
+        delta = timedelta(minutes=2)
+        venues = posters = 15
 
-    # print('Benchmarking total posts...')
-    # benchmarker.benchmark_total_posts(1, 500, 1, 5)
+        print('Generating events...')
+        generate_results = benchmarker.generate_events(days, delta, venues, posters)
+        print('Generated events: {}'.format(generate_results))
 
-    # print('Benchmarking histogram...')
-    # benchmarker.benchmark_histogram(1, 500, 1, 5)
+        sys.exit(0)
 
-    # print('Benchmarking top posters...')
-    # benchmarker.benchmark_top_posters(1, 500, 1, 5)
+    min_days = 1
+    max_days = 500
+    step_days = 1
+    venues_count = 5
+
+    benchmark_name = 'total_posts'
+
+    t = Timer()
+
+    with t:
+
+        print('Benchmarking {} with: {} - {} days ({} day step) and {} max venues'.format(
+            benchmark_name, min_days, max_days, step_days, venues_count))
+        result = benchmarker.benchmark(benchmark_name, min_days, max_days, step_days, venues_count)
+
+    for filter_venues, results in enumerate(result):
+        print('{} with {} venues:'.format(benchmark_name, filter_venues))
+        for result_type, data in results.iteritems():
+            print('{}: {}'.format(result_type, data))

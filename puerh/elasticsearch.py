@@ -20,6 +20,7 @@ class Indexer(object):
         self._es.json_encoder = ESJSONEncoder
         self._index = index
 
+
     def cleanup(self):
         try:
             self._es.delete_index(self._index)
@@ -53,6 +54,17 @@ class Indexer(object):
             }
         }
 
+        hybrid_mapping = {
+            'properties': {
+                'timestamp': {'type': 'date', 'format': 'dateOptionalTime'},
+                'source': {'type': 'string', 'analyzer': 'keyword'},
+                'venue': {'type': 'string', 'analyzer': 'simple'},
+                'poster': {'type': 'string', 'analyzer': 'simple'},
+                'delta': {'type': 'integer'}
+            }
+        }
+
+
         mapping = analyzed_mapping
 
         self._es.put_mapping(self._index, 'post', {'post': mapping})
@@ -79,6 +91,13 @@ class Query(object):
     def __init__(self, url='http://localhost:9200/', index='events'):
         self._es = ElasticSearch(url)
         self._index = index
+
+
+    def last_request_took(self):
+        ''' A number of processing time in milliseconds
+        reported by ElasticSearch without our client code overhead.
+        '''
+        return self._last_request_took
 
     def _build_filter(self, event_type, start=None, end=None, **kwargs):
         '''Build an 'AND' filter that combines filters:
@@ -154,6 +173,7 @@ class Query(object):
             index=self._index, 
             query_params={'search_type': 'count'}
         )
+        self._last_request_took = result['took']
         facets = result['facets']['events_deltas_totals']['terms']
         return {
             f['term']: f['total']
@@ -192,6 +212,7 @@ class Query(object):
             index=self._index, 
             query_params={'search_type': 'count'}
         )
+        self._last_request_took = result['took']
         facets = result['facets']['top']['terms']
         return facets
 
@@ -262,7 +283,8 @@ class Query(object):
             index=self._index, 
             query_params={'search_type': 'count'}
         )
-        
+        self._last_request_took = result['took']
+
         return {
             facet: self._format_histogram_facet_values(values) 
             for facet, values in result['facets'].iteritems()
