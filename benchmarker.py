@@ -110,7 +110,7 @@ class Benchmarker(object):
                 print('{} days window with {} venues took elasticsearch {} ms ({} ms.)'.format(
                     days, venues_count, took_without_overhead, took_with_overhead))
 
-                days += 1
+                days += step_days
 
         return [
             {

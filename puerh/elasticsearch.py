@@ -58,14 +58,14 @@ class Indexer(object):
             'properties': {
                 'timestamp': {'type': 'date', 'format': 'dateOptionalTime'},
                 'source': {'type': 'string', 'analyzer': 'keyword'},
-                'venue': {'type': 'string', 'analyzer': 'simple'},
-                'poster': {'type': 'string', 'analyzer': 'simple'},
+                'venue': {'type': 'string', 'analyzer': 'whitespace'},
+                'poster': {'type': 'string', 'analyzer': 'whitespace'},
                 'delta': {'type': 'integer'}
             }
         }
 
 
-        mapping = analyzed_mapping
+        mapping = not_analyzed_mapping
 
         self._es.put_mapping(self._index, 'post', {'post': mapping})
 
@@ -134,6 +134,14 @@ class Query(object):
                     'execution': 'or'
                 }
                 filters.append({
+                    # XXX see if this query speeds up things
+                    # if mapping uses analyzed strings
+
+                    # 'query': {
+                    #     'query_string': {
+                    #         'query': ' OR '.join(term_values)
+                    #     }
+                    # }
                     'terms': terms,
                 })
 
