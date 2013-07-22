@@ -5,7 +5,7 @@ from .source import PREFIXES
 from bson import ObjectId
 import copy
 from datetime import datetime
-
+from functools import partial
 
 class ESJSONEncoder(JsonEncoder):
 
@@ -99,7 +99,7 @@ class Query(object):
         '''
         return self._last_request_took
 
-    def _build_filter(self, event_type, start=None, end=None, **kwargs):
+    def _build_filter(self, event_type, start=None, end=None, source=None, **kwargs):
         '''Build an 'AND' filter that combines filters:
             1. correct `event_type`
             2. more or equal than start time (if provided)
@@ -115,6 +115,31 @@ class Query(object):
             'term': {'_type': event_type}
         })
 
+        if source is not None:
+            filters.append({
+                'term': {'source': source}
+            })
+
+        for term_name, term_values in kwargs.iteritems():
+            if term_values:
+                terms = {
+                    'venue': term_values,
+                    'execution': 'or'
+                }
+                filters.append({
+                    # XXX see if this query speeds up things
+                    # UPD: not really
+                    # if mapping uses analyzed strings
+
+                    # 'query': {
+                    #     'query_string': {
+                    #         'query': ' OR '.join(term_values)
+                    #     }
+                    # }
+                    'terms': terms,
+                })
+
+
         timestamp_range = {}
         if start:
             timestamp_range['gte'] = start
@@ -127,25 +152,14 @@ class Query(object):
                 'range': {'timestamp': timestamp_range}
             })
 
-        for term_name, term_values in kwargs.iteritems():
-            if term_values:
-                terms = {
-                    'venue': term_values,
-                    'execution': 'or'
-                }
-                filters.append({
-                    # XXX see if this query speeds up things
-                    # if mapping uses analyzed strings
-
-                    # 'query': {
-                    #     'query_string': {
-                    #         'query': ' OR '.join(term_values)
-                    #     }
-                    # }
-                    'terms': terms,
-                })
-
-        return {'and': filters}
+        # BOOL filter is more performand than AND:
+        # http://www.elasticsearch.org/blog/all-about-elasticsearch-filter-bitsets/
+        # return {'and': filters}
+        return {
+            'bool': {
+                'must': filters
+            }
+        }
 
 
     def total(self, event_type, start=None, end=None, venues=[], posters=[]):
@@ -199,8 +213,8 @@ class Query(object):
 
         assert term in ('poster', 'venue', 'source')
 
-        filters = self._build_filter(event_type, start=start, end=end, 
-            venues=venues, posters=posters)
+        filters = self._build_filter(event_type, start=start, 
+            end=end, venues=venues, posters=posters)
 
         query = {
             'facets': {
@@ -232,7 +246,7 @@ class Query(object):
         ]
 
     def histogram(self, event_type, interval, start=None, end=None, 
-            venues=[], posters=[], sources_facets=PREFIXES, include_total=True):
+            venues=[], posters=[], sources_facets=PREFIXES, include_total=False):
         '''Returns histogram of events deltas totals in buckets by `interval` apart.
 
         {
@@ -254,8 +268,9 @@ class Query(object):
         `include_total` to `False`.
         '''
         
-        filters = self._build_filter(event_type, start=start, end=end, 
-            venues=venues, posters=posters)
+        filter_builder = partial(self._build_filter, event_type, start=start, 
+            end=end, venues=venues, posters=posters)
+
 
         date_histogram_value = {
             'key_field': 'timestamp',
@@ -266,6 +281,7 @@ class Query(object):
         facets = {}
 
         if include_total:
+            filters = filter_builder(source=None)
             facets['total'] = {
                 'date_histogram': date_histogram_value,
                 'facet_filter': filters
@@ -273,11 +289,7 @@ class Query(object):
 
 
         for source in sources_facets:
-
-            f = copy.deepcopy(filters)
-            f['and'].append({
-                'term': {'source': source}
-            })
+            filters = filter_builder(source=source)
 
             payload = {
                 'date_histogram': date_histogram_value,

@@ -157,8 +157,8 @@ if __name__ == '__main__':
 
     if 'generate' in sys.argv:
         days = 365 * 2
-        delta = timedelta(minutes=2)
-        venues = posters = 15
+        delta = timedelta(seconds=10)
+        venues = posters = 1000
 
         print('Generating events...')
         generate_results = benchmarker.generate_events(days, delta, venues, posters)
@@ -171,7 +171,7 @@ if __name__ == '__main__':
     step_days = 1
     venues_count = 5
 
-    benchmark_name = 'total_posts'
+    benchmark_name = 'histogram_day'
 
     t = Timer()
 
